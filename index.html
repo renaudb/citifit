@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Citifit{% endblock %}
+
+{% block style %}
+body {
+  padding-top: 40px;
+  padding-bottom: 40px;
+  background-color: #eee;
+}
+.container {
+  max-width: 350px;
+  margin: 0 auto;
+}
+.citifit-heading {
+  margin-bottom: 10px;
+}
+
+.table tbody tr {
+  border-bottom: solid #ddd 1px;
+}
+
+{% endblock %}
+
+{% block content %}
+<div class="container">
+
+  <h2 class="citifit-heading">Citifit</h2>
+  <div class="panel panel-primary panel-accounts">
+    <div class="panel-heading">
+      <h3 class="panel-title">Accounts</h3>
+    </div>
+    <div class="panel-body">
+      <table class="table">
+	<tbody>
+	  <tr>
+            <td>Citibike</td>
+            <td class="text-right"><a href="/citibike">edit</a></td>
+	  </tr>
+	  <tr>
+            <td>Fitbit</td>
+            <td class="text-right"><a href="/fitbit">edit</a></td>
+	  </tr>
+	</tbody>
+      </table>
+    </div>
+  </div>
+  <div class="alert alert-info" role="alert">
+    Last trip processed: {{ last_trip_id }}
+  </div>
+
+</div> <!-- /container -->
+{% endblock %}

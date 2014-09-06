@@ -1,0 +1,22 @@
+Citifit
+=======
+A Google App Engine service linking Citibike accounts with Fitbit accounts.
+
+Citifit is a simple service running on top of Google App Engine that makes it
+possible to automatically log Citibike activity to a Fitbit account.
+
+Setup
+=====
+First, install the required packages.
+
+  cd citifit
+  virtualenv -p /usr/bin/python2.7 --no-site-packages --distribute .
+
+  ./bin/pip2.7 install fitbit
+  ./bin/pip2.7 install pytz
+  ./bin/pip2.7 install enum34
+
+Second, update the application field in the app.yaml with your Google App Engine
+application name.
+
+Third, add your keys for the different services to conf.py.

@@ -1,0 +1,20 @@
+application: # YOUR APPLICATION NAME
+version: 1
+runtime: python27
+api_version: 1
+threadsafe: true
+
+handlers:
+- url: /update
+  script: app.application
+  login: admin
+- url: /.*
+  script: app.application
+
+libraries:
+- name: jinja2
+  version: "latest"
+- name: lxml
+  version: "latest"
+- name: webapp2
+  version: "latest"

@@ -1,0 +1,10 @@
+# Ignore third party libraries folders.
+bin/
+include/
+lib/
+
+# Ignore backup files.
+*.bak
+
+# Ignore compiled files.
+*.pyc
