@@ -84,10 +84,6 @@ class Citifit:
         distance = directions['routes'][0]['legs'][0]['distance']['value']
         duration = trip.duration
 
-        print trip.id
-        print trip.start_time.strftime('%Y-%m-%d')
-        print trip.start_time.strftime('%H:%M')
-
         resp = self.fitbit.log_activity({
             'activityId' : activity_id,
             'startTime' : trip.start_time.strftime('%H:%M'),

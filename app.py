@@ -29,6 +29,26 @@ class UserSettings(ndb.Model):
     citibike_password = ndb.StringProperty()
     last_trip_id = ndb.IntegerProperty(default=0)
 
+class Update(webapp2.RequestHandler):
+    """
+    Update handler. Called through cron to update all users with their latest
+    Citibike trips.
+    """
+    def get(self):
+        q = UserSettings.query()
+        users = q.fetch()
+        for user in users:
+            try:
+                cf = citifit.Citifit(user.citibike_username,
+                                     user.citibike_password,
+                                     user.fitbit_key,
+                                     user.fitbit_secret)
+                user.last_trip_id = cf.update(last_trip_id)
+                user.put()
+            except:
+                e = sys.exc_info()[0]
+                logging.exception('Update exception: %s' % e)
+
 class Handler(webapp2.RequestHandler):
     """
     Base handler from which other handlers inherit. Includes login logic as well
@@ -126,29 +146,10 @@ class Main(Handler):
             self.redirect('/fitbit')
             return
 
-        print self.settings.fitbit_key
-        print self.settings.fitbit_secret
-
         template = JINJA_ENVIRONMENT.get_template('index.html')
         self.response.write(template.render({
             'last_trip_id': self.settings.last_trip_id
         }))
-
-class Update(webapp2.RequestHandler):
-    def get(self):
-        q = UserSettings.query()
-        users = q.fetch()
-        for user in users:
-            try:
-                cf = citifit.Citifit(user.citibike_username,
-                                     user.citibike_password,
-                                     user.fitbit_key,
-                                     user.fitbit_secret)
-                user.last_trip_id = cf.update(last_trip_id)
-                user.put()
-            except:
-                e = sys.exc_info()[0]
-                logging.exception('Update exception: %s' % e)
 
 JINJA_ENVIRONMENT = jinja2.Environment(
     loader=jinja2.FileSystemLoader(os.path.dirname(__file__)),
