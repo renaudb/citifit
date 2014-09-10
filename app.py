@@ -43,7 +43,7 @@ class Update(webapp2.RequestHandler):
                                      user.citibike_password,
                                      user.fitbit_key,
                                      user.fitbit_secret)
-                user.last_trip_id = cf.update(last_trip_id)
+                user.last_trip_id = cf.update(user.last_trip_id)
                 user.put()
             except:
                 e = sys.exc_info()[0]
