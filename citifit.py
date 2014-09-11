@@ -35,7 +35,7 @@ class Citifit:
                                     resource_owner_secret=fitbit_secret)
         self.maps = maps.Maps(conf.GOOGLE_API_KEY)
 
-    def update(self, oldest_trip_id=0):
+    def update(self, last_trip_id=0):
         """
         Updates Fitbit with all Citibike trip after last_trip_id. Returns the id
         of the last Citibike trip added to Fitbit.
