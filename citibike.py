@@ -82,7 +82,6 @@ class Citibike:
             'login_submit' : 'Login'
         })
 
-
     def _fetch(self, uri, data={}):
         req = None
         if (len(data) > 0):
