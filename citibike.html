@@ -42,10 +42,10 @@ body {
 {% block content %}
 <div class="container">
 
-  <form class="form-signin" role="form" method="post">
+  <form class="form-signin" role="form" method="post" action="/citibike">
     <h2 class="form-signin-heading">Citibike Login</h2>
-    <input type="username" class="form-control" placeholder="Username" required autofocus>
-    <input type="password" class="form-control" placeholder="Password" required>
+    <input name="username" type="text" class="form-control" placeholder="Username" required autofocus>
+    <input name="password" type="password" class="form-control" placeholder="Password" required>
     <div class="alert alert-warning" role="alert">
         Citibike passwords are stored in plain text.
     </div>
