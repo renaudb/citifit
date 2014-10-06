@@ -1,6 +1,7 @@
 import Cookie
 import cookielib
 import json
+import logging
 import urllib
 import urllib2
 
@@ -8,6 +9,7 @@ from datetime import datetime
 from lxml import etree
 from pytz import timezone
 
+from excepts import BadResponse
 from excepts import LogoutException
 
 class Citibike:
@@ -35,14 +37,17 @@ class Citibike:
         last = 0
         page = 0
         while page <= last:
-            f = self._fetch('https://www.citibikenyc.com/member/trips/%d'
-                            % page)
-            html = etree.fromstring(f, etree.HTMLParser())
+            uri = 'https://www.citibikenyc.com/member/trips/%d' % page
+            for retry in range(5):
+                f = self._fetch(uri)
+                if f.geturl() == uri:
+                    break
+                self._login(self.username, self.password)
 
+            html = etree.parse(f, etree.HTMLParser())
             if last == 0:
                 elem = html.xpath("//a[@data-ci-pagination-page]")[-1]
                 last = int(elem.attrib['data-ci-pagination-page'])
-
             for trip in html.xpath("//tr[@class='trip']"):
                 trips.append(Trip._from_element(trip))
 
@@ -57,7 +62,7 @@ class Citibike:
         stations = []
 
         f = self._fetch('http://www.citibikenyc.com/stations/json')
-        data = json.loads(f)
+        data = json.load(f)
 
         for station in data['stationBeanList']:
             stations.append(Station._from_json(station))
@@ -68,14 +73,18 @@ class Citibike:
         return self.fetcher.fetch(uri, data)
 
     def _login(self, username, password):
-        f = self._fetch('https://www.citibikenyc.com/login')
-        self.token = self.fetcher.token()
-        f = self._fetch('https://www.citibikenyc.com/login', {
-            'ci_csrf_token' : self.token,
-            'subscriberUsername' : username,
-            'subscriberPassword' : password,
-            'login_submit' : 'Login'
-        })
+        for retry in range(3):
+            f = self._fetch('https://www.citibikenyc.com/login')
+            self.token = self.fetcher.token()
+            f = self._fetch('https://www.citibikenyc.com/login', {
+                'ci_csrf_token' : self.token,
+                'subscriberUsername' : username,
+                'subscriberPassword' : password,
+                'login_submit' : 'Login'
+            })
+            if f.geturl() == 'https://www.citibikenyc.com/member/profile':
+                return
+        raise BadResponse('Login Failed', 'Could not log into citibike.')
 
 class Trip:
     """
@@ -158,15 +167,18 @@ class UrllibFetcher(Fetcher):
         self.opener = urllib2.build_opener(*handlers)
 
     def fetch(self, uri, data={}):
+        logging.debug('Fetching %s', uri)
         if (len(data) > 0):
             data = urllib.urlencode(data)
             req = urllib2.Request(uri, data)
         else:
             req = urllib2.Request(uri)
-        return self.opener.open(req).read()
+        return self.opener.open(req)
 
     def token(self):
+        token = None
         for c in self.cookies:
             if c.name == 'ci_csrf_token':
-                return c.value
-        return None
+                token = c.value
+        logging.debug('Found token %s', token)
+        return token
