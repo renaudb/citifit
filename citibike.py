@@ -1,19 +1,12 @@
 import Cookie
 import cookielib
 import json
-import time
 import urllib
 import urllib2
 
 from datetime import datetime
 from lxml import etree
 from pytz import timezone
-
-try:
-    from google.appengine.api import urlfetch
-    found_urlfetch = True
-except ImportError:
-    found_urlfetch = False
 
 from excepts import LogoutException
 
@@ -26,10 +19,7 @@ class Citibike:
         self.username = username
         self.password = password
         self.token = None
-        if found_urlfetch:
-            self.fetcher = UrlFetchFetcher()
-        else:
-            self.fetcher = UrllibFetcher()
+        self.fetcher = UrllibFetcher()
 
         if self.username != None and self.password != None:
             self._login(self.username, self.password)
@@ -159,44 +149,10 @@ class Fetcher:
     def token(self):
         raise NotImplementedError("Subclass need implement token.")
 
-class UrlFetchFetcher(Fetcher):
-    def __init__(self):
-        self.cookies = Cookie.SimpleCookie()
-
-    def fetch(self, uri, data={}):
-        if len(data) > 0:
-            method = urlfetch.POST
-        else:
-            method = urlfetch.GET
-        while uri != None:
-            # Fetch the URL with cookies without following redirects.
-            cookies_header = "; ".join(["%s=%s" % (c.key, c.value)
-                                        for c in self.cookies.values()])
-            resp = urlfetch.fetch(uri, urllib.urlencode(data), method,
-                                  headers={'Cookie' : cookies_header},
-                                  follow_redirects=False)
-
-            # Extract the cookies from the response.
-            self.cookies.load(resp.headers.get('set-cookie', ''))
-
-            # Setup the parameters for the next request in the redirect.
-            uri = resp.headers.get('location')
-            data = {}
-            method = urlfetch.GET
-        return resp.content
-
-    def token(self):
-        for c in self.cookies.values():
-            if c.key == 'ci_csrf_token':
-                return c.value
-        return None
-
 class UrllibFetcher(Fetcher):
     def __init__(self):
         self.cookies = cookielib.LWPCookieJar()
         handlers = [
-            urllib2.HTTPHandler(),
-            urllib2.HTTPSHandler(),
             urllib2.HTTPCookieProcessor(self.cookies),
         ]
         self.opener = urllib2.build_opener(*handlers)
