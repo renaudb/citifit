@@ -4,7 +4,6 @@ sys.path.append("./lib/python2.7/site-packages/")
 
 import json
 import urllib
-import urllib2
 
 from enum import Enum
 
@@ -61,7 +60,7 @@ class Maps:
             data['units'] = units.name
 
         url = self.ENDPOINT + urllib.urlencode(data)
-        resp = json.load(urllib2.urlopen(url))
+        resp = json.load(urllib.urlopen(url))
 
         status = resp['status']
         if status != 'OK':
