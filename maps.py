@@ -6,6 +6,11 @@ import json
 import urllib
 
 from enum import Enum
+try:
+    from google.appengine.api import urlfetch
+    found_urlfetch = True
+except ImportError:
+    found_urlfetch = False
 
 from excepts import BadResponse
 
@@ -59,8 +64,14 @@ class Maps:
         if units != None:
             data['units'] = units.name
 
+        return self._fetch(data)
+
+    def _fetch(self, data):
         url = self.ENDPOINT + urllib.urlencode(data)
-        resp = json.load(urllib.urlopen(url))
+        if found_urlfetch:
+            resp = json.load(urlfetch.fetch(url).content)
+        else:
+            resp = json.load(urllib.urlopen(url))
 
         status = resp['status']
         if status != 'OK':
