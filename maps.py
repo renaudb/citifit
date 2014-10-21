@@ -69,7 +69,7 @@ class Maps:
     def _fetch(self, data):
         url = self.ENDPOINT + urllib.urlencode(data)
         if found_urlfetch:
-            resp = json.load(urlfetch.fetch(url).content)
+            resp = json.loads(urlfetch.fetch(url).content)
         else:
             resp = json.load(urllib.urlopen(url))
 
