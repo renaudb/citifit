@@ -2,6 +2,7 @@ import Cookie
 import cookielib
 import json
 import logging
+import time
 import urllib
 import urllib2
 
@@ -73,7 +74,7 @@ class Citibike:
         return self.fetcher.fetch(uri, data)
 
     def _login(self, username, password):
-        for retry in range(3):
+        for retry in range(5):
             f = self._fetch('https://www.citibikenyc.com/login')
             self.token = self.fetcher.token()
             f = self._fetch('https://www.citibikenyc.com/login', {
@@ -84,6 +85,7 @@ class Citibike:
             })
             if f.geturl() == 'https://www.citibikenyc.com/member/profile':
                 return
+            time.sleep(2**retry)
         raise BadResponse('Login Failed', 'Could not log into citibike.')
 
 class Trip:
