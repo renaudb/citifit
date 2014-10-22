@@ -35,7 +35,7 @@ class Maps:
     Wrapper around the Google Maps Directions API. Details about the API can be
     found at https://developers.google.com/maps/documentation/directions/.
     """
-    ENDPOINT = 'http://maps.googleapis.com/maps/api/directions/json?'
+    ENDPOINT = 'https://maps.googleapis.com/maps/api/directions/json?'
 
     def __init__(self, api_key):
         """
