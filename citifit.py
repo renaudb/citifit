@@ -96,6 +96,8 @@ class Citifit:
     def _is_valid_trip(self, trip):
         if trip.end_station == None:
             return False
+        if trip.start_station == trip.end_station:
+            return False
         if trip.duration < self.MIN_TRIP_DURATION:
             return False
         return True
