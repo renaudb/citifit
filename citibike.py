@@ -65,6 +65,9 @@ class Citibike:
         f = self._fetch('http://www.citibikenyc.com/stations/json')
         data = json.load(f)
 
+        if 'stationBeanList' not in data or len(data['stationBeanList']) == 0:
+            raise BadResponse('Station Fetch Failed', data)
+
         for station in data['stationBeanList']:
             stations.append(Station._from_json(station))
 
