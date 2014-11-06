@@ -75,6 +75,13 @@ class Citifit:
         return trips
 
     def _add_trip(self, activity_id, trip, stations):
+        if not trip.start_station in stations:
+            logging.warning("Invalid start station id: %d", trip.start_station)
+            return
+        if not trip.end_station in stations:
+            logging.warning("Invalid end station id: %d", trip.start_station)
+            return
+
         orig = stations[trip.start_station]
         dest = stations[trip.end_station]
         directions = self.maps.directions((orig.lat, orig.lng),
