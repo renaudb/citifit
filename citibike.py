@@ -27,7 +27,7 @@ class Citibike:
         if self.username != None and self.password != None:
             self._login(self.username, self.password)
 
-    def trips(self):
+    def trips(self, min_id=-1):
         """
         Fetches all the trips for the logged in user.
         """
@@ -49,8 +49,11 @@ class Citibike:
             if last == 0:
                 elem = html.xpath("//a[@data-ci-pagination-page]")[-1]
                 last = int(elem.attrib['data-ci-pagination-page'])
-            for trip in html.xpath("//tr[@class='trip']"):
-                trips.append(Trip._from_element(trip))
+            for t in html.xpath("//tr[@class='trip']"):
+                trip = Trip._from_element(t)
+                if trip.id <= min_id:
+                    return trips
+                trips.append(trip)
 
             page += 1
 

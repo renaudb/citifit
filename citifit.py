@@ -68,7 +68,7 @@ class Citifit:
 
     def _get_trips(self, min_id):
         trips = []
-        for trip in self.citibike.trips():
+        for trip in self.citibike.trips(min_id):
             if trip.id > min_id and self._is_valid_trip(trip):
                 trips.append(trip)
         trips.sort(cmp=lambda t1,t2: cmp(t1.id, t2.id))
