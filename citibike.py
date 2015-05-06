@@ -2,6 +2,7 @@ import Cookie
 import cookielib
 import json
 import logging
+import re
 import time
 import urllib
 import urllib2
@@ -18,10 +19,21 @@ class Citibike:
     Wrapper around the Citibike API. Includes methods to access user and system
     wide data. This API is not official and is unsupported by Citibike.
     """
+    LOGIN_FORM_URL = 'https://member.citibikenyc.com/profile/login_check'
+
+    LOGIN_URL = 'https://member.citibikenyc.com/profile/login'
+
+    PROFILE_URL = 'https://member.citibikenyc.com/profile/'
+
+    TRIP_URL = 'https://member.citibikenyc.com/profile/trips/'
+
+    STATION_URL = 'http://www.citibikenyc.com/stations/json'
+
+    NUM_RETRY = 5
+
     def __init__(self, username=None, password=None):
         self.username = username
         self.password = password
-        self.token = None
         self.fetcher = UrllibFetcher()
 
         if self.username != None and self.password != None:
@@ -34,29 +46,22 @@ class Citibike:
         if self.username == None or self.password == None:
             raise LogoutException()
 
-        trips = []
-        last = 0
-        page = 0
-        while page <= last:
-            uri = 'https://www.citibikenyc.com/member/trips/%d' % page
-            for retry in range(5):
-                f = self._fetch(uri)
-                if f.geturl() == uri:
-                    break
-                self._login(self.username, self.password)
+        station_ids = {s.name: s.id for s in self.stations()}
+        if len(station_ids) == 0:
+            raise BadResponse('Trips Request Failed',
+                              'Could not fetch stations.')
 
-            html = etree.parse(f, etree.HTMLParser())
-            if last == 0:
-                elem = html.xpath("//a[@data-ci-pagination-page]")[-1]
-                last = int(elem.attrib['data-ci-pagination-page'])
-            for t in html.xpath("//tr[@class='trip']"):
-                trip = Trip._from_element(t)
+        member_id = self._member_id()
+        last = self._last_trip_page_number(member_id)
+        trips = []
+        for page in range(last + 1):
+            page_trips = self._page_trips(member_id, page, station_ids)
+            for trip in page_trips:
                 if trip.id <= min_id:
+                    logging.debug("Retrieved %d trips" % len(trips))
                     return trips
                 trips.append(trip)
-
-            page += 1
-
+        logging.debug("Retrieved %d trips" % len(trips))
         return trips
 
     def stations(self):
@@ -64,35 +69,121 @@ class Citibike:
         Fetches all the stations and their status as of the time of the request.
         """
         stations = []
-
-        f = self._fetch('http://www.citibikenyc.com/stations/json')
+        f = self._fetch(Citibike.STATION_URL)
         data = json.load(f)
-
         if 'stationBeanList' not in data or len(data['stationBeanList']) == 0:
             raise BadResponse('Station Fetch Failed', data)
-
         for station in data['stationBeanList']:
             stations.append(Station._from_json(station))
-
+        logging.debug("Retrieved %d stations" % len(stations))
         return stations
 
     def _fetch(self, uri, data={}):
         return self.fetcher.fetch(uri, data)
 
     def _login(self, username, password):
-        for retry in range(5):
-            f = self._fetch('https://www.citibikenyc.com/login')
-            self.token = self.fetcher.token()
-            f = self._fetch('https://www.citibikenyc.com/login', {
-                'ci_csrf_token' : self.token,
-                'subscriberUsername' : username,
-                'subscriberPassword' : password,
-                'login_submit' : 'Login'
+        for retry in range(Citibike.NUM_RETRY):
+            token = self._token()
+            if token is None:
+                time.sleep(2**retry)
+                continue
+            f = self._fetch(Citibike.LOGIN_FORM_URL, {
+                '_username' : username,
+                '_password' : password,
+                '_failure_path' : 'eightd_bike_profile__login',
+                'ed_from_login_popup' : 'true',
+                '_login_csrf_security_token' : token,
             })
-            if f.geturl() == 'https://www.citibikenyc.com/member/profile':
-                return
-            time.sleep(2**retry)
-        raise BadResponse('Login Failed', 'Could not log into citibike.')
+            if f.geturl() != Citibike.PROFILE_URL:
+                time.sleep(2**retry)
+                continue
+            logging.debug("Login successful")
+            return
+        raise BadResponse('Login Failed', 'Could not log into Citibike.')
+
+    def _token(self):
+        CSRF_TOKEN_XPATH = '//input[@name="_login_csrf_security_token"]/@value'
+        for retry in range(Citibike.NUM_RETRY):
+            f = self._fetch(Citibike.LOGIN_URL)
+            if f.geturl() != Citibike.LOGIN_URL:
+                time.sleep(2**retry)
+                continue
+            html = etree.parse(f, etree.HTMLParser())
+            value = html.xpath(CSRF_TOKEN_XPATH)
+            if len(value) > 0:
+                token = value[0]
+                logging.debug("Retrieved token: %s" % token)
+                return token
+        raise BadResponse('Token Request Failed', 'Could not fetch token.')
+
+    def _member_id(self):
+        MEMBER_ID_XPATH = '//a[contains(@href, "memberId")]/@href'
+        MEMBER_ID_REGEXP = r'memberId=([^&]+)'
+        for retry in range(Citibike.NUM_RETRY):
+            f = self._fetch(Citibike.PROFILE_URL)
+            if f.geturl() == Citibike.LOGIN_URL:
+                self._login(self.username, self.password)
+                continue
+            if f.geturl() != Citibike.PROFILE_URL:
+                time.sleep(2**retry)
+                continue
+            html = etree.parse(f, etree.HTMLParser())
+            href = html.xpath(MEMBER_ID_XPATH)
+            if len(href) > 0:
+                match = re.search(MEMBER_ID_REGEXP, href[0])
+                if match:
+                    member_id = match.group(1)
+                    logging.debug("Retrieved member id: %s" % member_id)
+                    return member_id
+        raise BadResponse('Member Id Request Failed',
+                          'Could not fetch member id.')
+
+    def _last_trip_page_number(self, member_id):
+        LAST_TRIP_PAGE_XPATH = '//a[text()="Oldest"]/@href'
+        LAST_TRIP_PAGE_REGEXP = r'pageNumber=([\d]+)'
+        trip_url = Citibike.TRIP_URL + member_id
+        for retry in range(Citibike.NUM_RETRY):
+            f = self._fetch(trip_url)
+            if f.geturl() == Citibike.LOGIN_URL:
+                self._login(self.username, self.password)
+                continue
+            if f.geturl() != trip_url:
+                time.sleep(2**retry)
+                continue
+            html = etree.parse(f, etree.HTMLParser())
+            href = html.xpath(LAST_TRIP_PAGE_XPATH)
+            member_id = None
+            if len(href) > 0:
+                match = re.search(LAST_TRIP_PAGE_REGEXP, href[0])
+                if match:
+                    page_number = int(match.group(1))
+                    logging.debug("Retrieved last trip page number: %d"
+                                  % page_number)
+                    return page_number
+        raise BadResponse('Last Trip Page Number Request Failed',
+                          'Could not fetch last trip page for %s.' % member_id)
+
+    def _page_trips(self, member_id, page, station_ids):
+        TRIP_XPATH = '//div[contains(@class, "ed-table__item_trip")]'
+        trip_url = Citibike.TRIP_URL + member_id + '?pageNumber=' + str(page)
+        for retry in range(Citibike.NUM_RETRY):
+            f = self._fetch(trip_url)
+            if f.geturl() == Citibike.LOGIN_URL:
+                self._login(self.username, self.password)
+                continue
+            if f.geturl() != trip_url:
+                time.sleep(2**retry)
+                continue
+            html = etree.parse(f, etree.HTMLParser())
+            elems = html.xpath(TRIP_XPATH)
+            if (len(elems) > 0):
+                trips = filter(None, [Trip._from_element(e, station_ids)
+                                      for e in elems])
+                logging.debug("Retrieved %d trips from page: %d"
+                              % (len(trips), page))
+                return trips
+        raise BadResponse('Page Trips Request Failed',
+                          'Could not fetch trips for page %d.' % page)
 
 class Trip:
     """
@@ -108,26 +199,45 @@ class Trip:
         self.duration = duration
 
     @staticmethod
-    def _from_element(e):
-        id = int(e.attrib['id'].split('-')[-1])
-        start_station = int(e.attrib['data-start-station-id'])
-        start_timestamp = int(e.attrib['data-start-timestamp'])
-        start_time = datetime.fromtimestamp(start_timestamp,
-                                            timezone('US/Eastern'))
+    def _from_element(e, station_ids):
+        START_STATION_XPATH = ('.//div[contains(@class, ' +
+                               '"trip-start-station")]/text()')
+        END_STATION_XPATH = ('.//div[contains(@class, ' +
+                             '"trip-end-station")]/text()')
+        START_TIME_XPATH = './/div[contains(@class, "trip-start-date")]/text()'
+        END_TIME_XPATH = './/div[contains(@class, "trip-end-date")]/text()'
+        DURATION_XPATH = './/div[contains(@class, "trip-duration")]/text()'
 
-        if e.attrib['data-end-station-id'] == 'Station Id - null : null':
-            return Trip(id, start_station, start_time, None, None, None)
+        def parse_date(s):
+            TIME_FORMAT = '%m/%d/%Y %I:%M:%S %p'
+            dt = datetime.strptime(s, TIME_FORMAT)
+            dt = timezone('US/Eastern').localize(dt)
+            return dt
 
-        end_station = int(e.attrib['data-end-station-id'])
-        duration = int(e.attrib['data-duration-seconds'])
+        def parse_duration(s):
+            DURATION_REGEXP = r'(?:(\d+) h )?(\d+) min (\d+) s'
+            match = re.match(DURATION_REGEXP, s)
+            hours = int(match.group(1)) if match.group(1) is not None else 0
+            mins = int(match.group(2))
+            secs = int(match.group(3))
+            return hours * 3600 + mins * 60 + secs
 
-        end_timestamp = 0
-        if len(e.attrib['data-end-timestamp']) > 0:
-            end_timestamp = int(e.attrib['data-end-timestamp'])
-        else:
-            end_timestamp = start_timestamp + duration
-        end_time = datetime.fromtimestamp(end_timestamp,
-                                          timezone('US/Eastern'))
+        def timestamp_utc(dt):
+            epoch = datetime(1970, 1, 1, tzinfo=timezone('UTC'))
+            return (dt - epoch).total_seconds()
+
+        duration_text = e.xpath(DURATION_XPATH)[0].strip()
+        if (duration_text == '-'):
+            return None
+        duration = parse_duration(duration_text)
+
+        start_station = station_ids[e.xpath(START_STATION_XPATH)[0].strip()]
+        start_time = parse_date(e.xpath(START_TIME_XPATH)[0].strip())
+
+        end_station = station_ids[e.xpath(END_STATION_XPATH)[0].strip()]
+        end_time = parse_date(e.xpath(END_TIME_XPATH)[0].strip())
+
+        id = timestamp_utc(start_time)
 
         return Trip(id, start_station, start_time, end_station, end_time,
                     duration)
@@ -163,9 +273,6 @@ class Fetcher:
     def fetch(self, uri, data={}):
         raise NotImplementedError("Subclass need implement fetch.")
 
-    def token(self):
-        raise NotImplementedError("Subclass need implement token.")
-
 class UrllibFetcher(Fetcher):
     def __init__(self):
         self.cookies = cookielib.LWPCookieJar()
@@ -182,11 +289,3 @@ class UrllibFetcher(Fetcher):
         else:
             req = urllib2.Request(uri)
         return self.opener.open(req)
-
-    def token(self):
-        token = None
-        for c in self.cookies:
-            if c.name == 'ci_csrf_token':
-                token = c.value
-        logging.debug('Found token %s', token)
-        return token

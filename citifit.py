@@ -44,12 +44,15 @@ class Citifit:
         stations = self._get_stations()
         for trip in self._get_trips(last_trip_id):
             try:
+                logging.debug('Adding trip: %d' % trip.id)
                 self._add_trip(activity_id, trip, stations)
             except:
                 logging.exception('Failed to add trip: %s' % sys.exc_info()[0])
+                logging.debug('Last trip id: %d' % last_trip_id)
                 return last_trip_id
             last_trip_id = trip.id
             time.sleep(1)
+        logging.debug('Last trip id: %d' % last_trip_id)
         return last_trip_id
 
     def _get_biking_activity_id(self):
