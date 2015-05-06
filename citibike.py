@@ -237,7 +237,7 @@ class Trip:
         end_station = station_ids[e.xpath(END_STATION_XPATH)[0].strip()]
         end_time = parse_date(e.xpath(END_TIME_XPATH)[0].strip())
 
-        id = timestamp_utc(start_time)
+        id = int(timestamp_utc(start_time))
 
         return Trip(id, start_station, start_time, end_station, end_time,
                     duration)
