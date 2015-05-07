@@ -15,6 +15,7 @@ First, install the required packages.
   ./bin/pip2.7 install fitbit
   ./bin/pip2.7 install pytz
   ./bin/pip2.7 install enum34
+  ./bin/pip2.7 install google-api-python-client
 
 Second, update the application field in the app.yaml with your Google App Engine
 application name.

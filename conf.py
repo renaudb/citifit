@@ -5,5 +5,9 @@ SESSION_SECRET = ''
 FITBIT_CLIENT_KEY    = ''
 FITBIT_CLIENT_SECRET = ''
 
+# Google OAuth keys from https://console.developers.google.com/.
+GOOGLE_FIT_CLIENT_KEY    = ''
+GOOGLE_FIT_CLIENT_SECRET = ''
+
 # Google API key from https://console.developers.google.com/.
 GOOGLE_API_KEY = ''
