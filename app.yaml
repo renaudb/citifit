@@ -10,6 +10,7 @@ handlers:
   login: admin
 - url: /.*
   script: app.application
+  secure: always
 
 libraries:
 - name: jinja2
