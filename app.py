@@ -37,6 +37,16 @@ class UserSettings(ndb.Model):
     google_fit_credentials = CredentialsNDBProperty()
     last_trip_id = ndb.IntegerProperty(default=0)
 
+    def is_logged_in_citibike(self):
+        return self.citibike_username != None and self.citibike_password != None
+
+    def is_logged_in_fitbit(self):
+        return self.fitbit_key != None and self.fitbit_secret != None
+
+    def is_logged_in_google_fit(self):
+        return self.google_fit_credentials != None
+
+
 class Update(webapp2.RequestHandler):
     """
     Update handler. Called through cron to update all users with their latest
@@ -48,9 +58,9 @@ class Update(webapp2.RequestHandler):
         for user in users:
             try:
                 cf = citifit.Citifit(user.citibike_username,
-                                     user.citibike_password,
-                                     user.fitbit_key,
-                                     user.fitbit_secret)
+                                     user.citibike_password)
+                if user.is_logged_in_fitbit():
+                    cf.add_fitbit(user.fitbit_key, user.fitbit_secret)
                 user.last_trip_id = cf.update(user.last_trip_id)
                 user.put()
             except:
@@ -148,24 +158,13 @@ class Main(Handler):
     """
     Main handler responsible for the main landing page.
     """
-    def is_logged_in_citibike(self):
-        return self.settings.citibike_username != None and \
-          self.settings.citibike_password != None
-
-    def is_logged_in_fitbit(self):
-        return self.settings.fitbit_key != None and \
-          self.settings.fitbit_secret != None
-
-    def is_logged_in_google_fit(self):
-        return self.settings.google_fit_credentials != None
-
     def get(self):
         template = JINJA_ENVIRONMENT.get_template('index.html')
         self.response.write(template.render({
             'last_trip_id': self.settings.last_trip_id,
-            'has_citibike': self.is_logged_in_citibike(),
-            'has_fitbit': self.is_logged_in_fitbit(),
-            'has_google_fit': self.is_logged_in_google_fit()
+            'has_citibike': self.settings.is_logged_in_citibike(),
+            'has_fitbit': self.settings.is_logged_in_fitbit(),
+            'has_google_fit': self.settings.is_logged_in_google_fit()
         }))
 
 JINJA_ENVIRONMENT = jinja2.Environment(
