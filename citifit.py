@@ -2,11 +2,13 @@ import sys
 
 sys.path.append("./lib/python2.7/site-packages/")
 
-import datetime
 import fitbit
+import httplib2
 import logging
 import time
 
+from apiclient.discovery import build
+from datetime import datetime
 from pytz import timezone
 
 import citibike
@@ -31,6 +33,13 @@ class Citifit:
         self.maps = maps.Maps(conf.GOOGLE_API_KEY)
         self.services = []
         self.stations = self._get_stations()
+
+    def add_google_fit(self, google_fit_credentials):
+        """
+        Adds Google Fit service.
+        """
+        self.services.append(GoogleFitService(google_fit_credentials,
+                                              self.stations))
 
     def add_fitbit(self, fitbit_key, fitbit_secret):
         """
@@ -107,6 +116,149 @@ class FitnessService:
     """
     def add_trip(self, trip, distance):
         raise NotImplementedError("Subclass need implement add_trip.")
+
+class GoogleFitService(FitnessService):
+    """
+    GoogleFitService is used to add Citibike trips to Google Fit.
+    """
+    ACTIVITY_BIKING_VALUE = 1  # Biking
+    ACTIVITY_DATA_TYPE_NAME = 'com.google.activity.segment'
+    APPLICATION_NAME = 'Citifit'
+    APPLICATION_VERSION = '1.0'
+    USER_ID = 'me'
+
+    def __init__(self, credentials, stations):
+        logging.debug("Credentials: %s" % credentials)
+        http = credentials.authorize(httplib2.Http())
+        self.service = build('fitness', 'v1', http=http)
+        self.stations = stations
+        self.activity_data_source = self._get_activity_data_source()
+        if self.activity_data_source == None:
+            self.activity_data_source = self._create_activity_data_source()
+
+    def add_trip(self, trip, distance):
+        self._add_activity(trip)
+        self._add_session(trip)
+
+    def _add_session(self, trip):
+        def trip_time(trip):
+            return trip.start_time.ctime()
+
+        def trip_name(trip):
+            return "Citbike Trip on %s" % trip_time(trip)
+
+        def trip_description(trip):
+            start_station_name = self.stations[trip.start_station].name
+            end_station_name = self.stations[trip.end_station].name
+            return "Citibike ride on %s from %s to %s." % (trip_time(trip),
+                                                           start_station_name,
+                                                           end_station_name)
+
+        def timestamp_utc_millis(dt):
+            epoch = datetime(1970, 1, 1, tzinfo=timezone('UTC'))
+            return int((dt - epoch).total_seconds() * 1000)
+
+        session_id = str(trip.id)
+        body = {
+            'id': session_id,
+            'name': trip_name(trip),
+            'description': trip_description(trip),
+            'startTimeMillis': str(timestamp_utc_millis(trip.start_time)),
+            'endTimeMillis': str(timestamp_utc_millis(trip.end_time)),
+            'modifiedTimeMillis': str(int(time.time() * 1000)),
+            'activityType': str(GoogleFitService.ACTIVITY_BIKING_VALUE),
+            'application': {
+                'version': GoogleFitService.APPLICATION_VERSION,
+                'name': GoogleFitService.APPLICATION_NAME,
+            },
+        }
+        logging.debug("Sending Google Fit session update request: %s" % body)
+        request = self.service.users().sessions().update(
+            userId=GoogleFitService.USER_ID, sessionId=session_id, body=body)
+        response = request.execute()
+        logging.debug("Received Google Fit session update response: %s"
+                      % response)
+
+    def _add_activity(self, trip):
+        ACTIVITY_FIELD_NAME = 'activity'
+
+        def timestamp_utc_nanos(dt):
+            epoch = datetime(1970, 1, 1, tzinfo=timezone('UTC'))
+            return int((dt - epoch).total_seconds() * 1000 * 1000 * 1000)
+
+        activity_data_source_id = self.activity_data_source['dataStreamId']
+        start_time = timestamp_utc_nanos(trip.start_time)
+        end_time = timestamp_utc_nanos(trip.end_time)
+        body = {
+            'dataSourceId': self.activity_data_source['dataStreamId'],
+            'maxEndTimeNs': str(end_time),
+            'minStartTimeNs': str(start_time),
+            'point': [{
+                'dataTypeName': GoogleFitService.ACTIVITY_DATA_TYPE_NAME,
+                'endTimeNanos': str(end_time),
+                'originDataSourceId': '',
+                'startTimeNanos': str(start_time),
+                'value': [{
+                    'intVal': str(GoogleFitService.ACTIVITY_BIKING_VALUE)
+                }],
+            }]
+        }
+        logging.debug("Sending Google Fit dataset patch request: %s" % body)
+        request = self.service.users().dataSources().datasets().patch(
+            userId=GoogleFitService.USER_ID,
+            dataSourceId=activity_data_source_id,
+            datasetId="%s-%s" % (start_time, end_time),
+            body=body)
+        response = request.execute()
+        logging.debug("Received Google Fit dataset patch response: %s"
+                      % response)
+
+    def _get_activity_data_source(self):
+        logging.debug("Sending Google Fit datasource list request")
+        request = self.service.users().dataSources().list(
+            userId=GoogleFitService.USER_ID,
+            dataTypeName=GoogleFitService.ACTIVITY_DATA_TYPE_NAME)
+        response = request.execute()
+        logging.debug("Received Google Fit datasource list response: %s"
+                      % response)
+
+        for data_source in response['dataSource']:
+            app = data_source['application']
+            if 'name' in app:
+                app_name = app['name']
+                if app_name == GoogleFitService.APPLICATION_NAME:
+                    return data_source
+        return None
+
+    def _create_activity_data_source(self):
+        ACTIVITY_FIELD_NAME = 'activity'
+        ACTIVITY_FIELD_FORMAT = 'integer'
+        TYPE = 'derived'
+
+        body = {
+            'dataType': {
+                'field': [
+                    {
+                        'name': ACTIVITY_FIELD_NAME,
+                        'format': ACTIVITY_FIELD_FORMAT,
+                    },
+                ],
+                'name': GoogleFitService.ACTIVITY_DATA_TYPE_NAME
+            },
+            'application': {
+                'version': GoogleFitService.APPLICATION_VERSION,
+                'name': GoogleFitService.APPLICATION_NAME,
+            },
+            'type': TYPE,
+        }
+        logging.debug("Sending Google Fit data source create request: %s"
+                      % body)
+        request = self.service.users().dataSources().create(
+            userId=GoogleFitService.USER_ID, body=body)
+        response = request.execute()
+        logging.debug("Received Google Fit data source create response: %s"
+                      % response)
+        return response
 
 class FitbitService(FitnessService):
     """

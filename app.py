@@ -21,9 +21,9 @@ import citifit
 import conf
 
 oauth_decorator = OAuth2Decorator(
-  client_id=conf.GOOGLE_FIT_CLIENT_KEY,
-  client_secret=conf.GOOGLE_FIT_CLIENT_SECRET,
-  scope='https://www.googleapis.com/auth/fitness.activity.write')
+    client_id=conf.GOOGLE_FIT_CLIENT_KEY,
+    client_secret=conf.GOOGLE_FIT_CLIENT_SECRET,
+    scope='https://www.googleapis.com/auth/fitness.activity.write')
 
 class UserSettings(ndb.Model):
     """
@@ -46,7 +46,6 @@ class UserSettings(ndb.Model):
     def is_logged_in_google_fit(self):
         return self.google_fit_credentials != None
 
-
 class Update(webapp2.RequestHandler):
     """
     Update handler. Called through cron to update all users with their latest
@@ -61,6 +60,8 @@ class Update(webapp2.RequestHandler):
                                      user.citibike_password)
                 if user.is_logged_in_fitbit():
                     cf.add_fitbit(user.fitbit_key, user.fitbit_secret)
+                if user.is_logged_in_google_fit():
+                    cf.add_google_fit(user.google_fit_credentials)
                 user.last_trip_id = cf.update(user.last_trip_id)
                 user.put()
             except:
