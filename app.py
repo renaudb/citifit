@@ -10,8 +10,9 @@ import urllib
 import webapp2
 
 from google.appengine.api import app_identity as app
-from google.appengine.api import users
 from google.appengine.ext import ndb
+from google.appengine.api import taskqueue
+from google.appengine.api import users
 from oauth2client.appengine import OAuth2Decorator
 from oauth2client.appengine import CredentialsNDBProperty
 from webapp2_extras import sessions
@@ -46,27 +47,72 @@ class UserSettings(ndb.Model):
     def is_logged_in_google_fit(self):
         return self.google_fit_credentials != None
 
+class UserUpdateLock(ndb.Model):
+    """
+    Lock used to prevent overlapping updates for a same user.
+    """
+    userid = ndb.StringProperty(required=True)
+    lock = ndb.BooleanProperty(default=False)
+
 class Update(webapp2.RequestHandler):
     """
     Update handler. Called through cron to update all users with their latest
     Citibike trips.
     """
     def get(self):
+        """
+        Updates all users, enqueuing one task per user in the default task
+        queue. Called by the cron job.
+        """
         q = UserSettings.query()
         users = q.fetch()
         for user in users:
-            try:
-                cf = citifit.Citifit(user.citibike_username,
-                                     user.citibike_password)
-                if user.is_logged_in_fitbit():
-                    cf.add_fitbit(user.fitbit_key, user.fitbit_secret)
-                if user.is_logged_in_google_fit():
-                    cf.add_google_fit(user.google_fit_credentials)
-                user.last_trip_id = cf.update(user.last_trip_id)
-                user.put()
-            except:
-                e = sys.exc_info()[0]
-                logging.exception('Update exception: %s' % e)
+            self._enqueue(user)
+
+    def post(self):
+        """
+        Updates user with userid passed as param. Release the update lock for
+        that user if successful.
+        """
+        userid = self.request.get('userid')
+        user = UserSettings.query(UserSettings.userid == userid).get()
+        if not user:
+            logging.debug("Invalid user: %s" % userid)
+            return
+
+        logging.debug("Updating user: %s" % userid)
+        cf = citifit.Citifit(user.citibike_username,
+                             user.citibike_password)
+        if user.is_logged_in_fitbit():
+            cf.add_fitbit(user.fitbit_key, user.fitbit_secret)
+        if user.is_logged_in_google_fit():
+            cf.add_google_fit(user.google_fit_credentials)
+        user.last_trip_id = cf.update(user.last_trip_id)
+        user.put()
+
+        logging.debug("Releasing user update lock for user: %s" % userid)
+        lock = UserUpdateLock.query(ancestor=user.key).get()
+        lock.lock = False
+        lock.put()
+
+    @ndb.transactional
+    def _enqueue(self, user):
+        """
+        Enqueues an update task for the user if the update lock for the user is
+        free. Grabs the update lock.
+        """
+        lock = UserUpdateLock.query(ancestor=user.key).get()
+        if not lock:
+            lock = UserUpdateLock(userid=user.userid, parent=user.key)
+        if lock.lock == False:
+            lock.lock = True
+            lock.put()
+            taskqueue.add(url='/update', params={'userid': user.userid},
+                          transactional=True)
+            logging.debug("User update task enqueued for user: %s"
+                          % user.userid)
+        else:
+            logging.debug("User update is locked for user: %s" % user.userid)
 
 class Handler(webapp2.RequestHandler):
     """
