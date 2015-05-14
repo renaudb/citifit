@@ -128,7 +128,6 @@ class GoogleFitService(FitnessService):
     USER_ID = 'me'
 
     def __init__(self, credentials, stations):
-        logging.debug("Credentials: %s" % credentials)
         http = credentials.authorize(httplib2.Http())
         self.service = build('fitness', 'v1', http=http)
         self.stations = stations
@@ -272,17 +271,22 @@ class FitbitService(FitnessService):
         self.activity_id = self._get_biking_activity_id()
 
     def add_trip(self, trip, distance):
-        self.fitbit.log_activity({
+        data = {
             'activityId' : self.activity_id,
             'startTime' : trip.start_time.strftime('%H:%M'),
             'durationMillis' : trip.duration * 1000,
             'date' : trip.start_time.strftime('%Y-%m-%d'),
             'distance' : distance,
             'distanceUnit' : 'Meter',
-            })
+        }
+        logging.debug("Sending Fitbit log activity request: %s" % data)
+        response = self.fitbit.log_activity(data)
+        logging.debug("Received Fitbit log activity response: %s" % response)
 
     def _get_biking_activity_id(self):
+        logging.debug("Sending Fitbit activity list request")
         activities = self.fitbit.activities_list()
+        logging.debug("Received Fitbit activity list response: %s" % activities)
         for category in activities['categories']:
             if category['name'] == 'Sports and Workouts':
                 for subcategory in category['subCategories']:
